@@ -1,10 +1,10 @@
 import "./App.css";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./App.css";
 import { Formik } from "formik";
 import * as Yup from "yup";
-import { styled } from '@mui/material/styles';
-import {MdDelete} from 'react-icons/md';
+import { styled } from "@mui/material/styles";
+import { MdDelete } from "react-icons/md";
 import {
   Container,
   TextField,
@@ -20,8 +20,11 @@ import {
   TableRow,
   Table,
   TableBody,
-  TableCell, tableCellClasses
+  TableCell,
+  tableCellClasses,
 } from "@mui/material";
+import { createTransaction } from "./firebase/firebase";
+import { listenTransactions } from "./firebase/firebase";
 
 const transactionTypes = [
   {
@@ -65,17 +68,83 @@ const StyledTableRow = styled(TableRow)(({ theme }) => ({
 
 function App() {
   const [list, setList] = useState([]);
+  const [listObj, setListObj] = useState({});
 
   const onSubmit = (v) => {
     setList([...list, v]);
+    //This is local
+    // let key = Math.random();
+    // setListObj({
+    //   ...listObj,
+    //   [key]: v,
+    // });
+    createTransaction(v?.title, v?.amount, v?.type);
   };
 
-  const onDelete = currentIndex => {
-    let filteredList = list.filter((el, index) => index!==currentIndex)
-    setList(filteredList)
-  }
+  const onDelete = (currentIndex) => {
+    let filteredList = list.filter((el, index) => index !== currentIndex);
+    setList(filteredList);
+  };
+
+  const calculateCurrentBalance = () => {
+    let total = 0;
+    list.map((el) => {
+      if (el?.type === "Income") {
+        total += el?.amount;
+      } else {
+        total -= el?.amount;
+      }
+    });
+    return total;
+  };
+
+  const clcTotalIncome = () => {
+    let total = 0;
+    list?.map((el) => {
+      if (el?.type === "Income") {
+        total += el?.amount;
+      }
+    });
+    return total;
+  };
+
+  const clcTotalExpence = () => {
+    let total = 0;
+    list?.map((el) => {
+      if (el?.type === "Expenses") {
+        total += el?.amount;
+      }
+    });
+    return total;
+  };
+
+  // Firebase will read data from database
+  const listenerCallbackFn = data => {
+    console.log("transactions", data);
+    //listen and update-> database -> ui
+    setListObj(data)
+  };
+  useEffect(() => {
+    listenTransactions(listenerCallbackFn);
+  }, []);
+
   return (
-    <Container>
+    <Container sx={{ width: "100%" }}>
+      <Grid
+        container
+        spacing={3}
+        sx={{ justifyContent: "space-between", margin: "6px", width: "100%" }}
+      >
+        <Card sx={{ width: "26%", padding: "5px" }}>
+          <h4>Current Balance: {calculateCurrentBalance()} $</h4>
+        </Card>
+        <Card sx={{ width: "26%", padding: "5px" }}>
+          <h4>Total Income: {clcTotalIncome()} $</h4>
+        </Card>
+        <Card sx={{ width: "26%", padding: "5px" }} a>
+          <h4>Total Expense: {clcTotalExpence()} $</h4>
+        </Card>
+      </Grid>
       <Grid container spacing={2}>
         <Grid item>
           <Card>
@@ -103,7 +172,7 @@ function App() {
                     }}
                   >
                     <h3> Add Transaction</h3>
-                    <div style={{marginBottom:"20px"}}>
+                    <div style={{ marginBottom: "20px" }}>
                       <TextField
                         error={errors.title && touched.title}
                         required
@@ -117,7 +186,7 @@ function App() {
                         value={values.title}
                       />
                     </div>
-                    <div style={{marginBottom:"20px"}}>
+                    <div style={{ marginBottom: "20px" }}>
                       <TextField
                         error={errors.amount && touched.amount}
                         required
@@ -174,19 +243,21 @@ function App() {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {list.map((el, index) => (
-                        <StyledTableRow key={index}>
+                      {Object.keys(listObj).map((key) => (
+                        <StyledTableRow key={key}>
                           <StyledTableCell align="center">
-                            {el.title}
+                            {listObj[key].title}
                           </StyledTableCell>
                           <StyledTableCell align="center">
-                            {el.amount}
+                            {listObj[key].amount}
                           </StyledTableCell>
                           <StyledTableCell align="center">
-                            {el.type}
+                            {listObj[key].type}
                           </StyledTableCell>
                           <StyledTableCell align="center">
-                            <Button onClick={() => onDelete(index)}><MdDelete/></Button>
+                            <Button onClick={() => onDelete()}>
+                              <MdDelete />
+                            </Button>
                           </StyledTableCell>
                         </StyledTableRow>
                       ))}
