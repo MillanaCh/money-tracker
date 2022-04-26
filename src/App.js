@@ -5,6 +5,7 @@ import { Formik } from "formik";
 import * as Yup from "yup";
 import { styled } from "@mui/material/styles";
 import { MdDelete } from "react-icons/md";
+import { FiEdit2 } from "react-icons/fi";
 import {
   Container,
   TextField,
@@ -23,8 +24,15 @@ import {
   TableCell,
   tableCellClasses,
 } from "@mui/material";
-import { createTransaction } from "./firebase/firebase";
-import { listenTransactions } from "./firebase/firebase";
+import {
+  createTransit,
+  deleteTransit,
+  listenTransit,
+  updateTransit,
+  createFirebaseUser,
+  userId,
+  signInFirebaseUser,
+} from "./firebase/firebase";
 
 const transactionTypes = [
   {
@@ -44,6 +52,11 @@ const TransactionSchema = Yup.object().shape({
     .required("Required"),
   amount: Yup.number().min(0).required("Required"),
   type: Yup.string().required("Required"),
+});
+
+const AuthSchema = Yup.object().shape({
+  email: Yup.string().email().required("Required"),
+  password: Yup.string().min(5).required("Required"),
 });
 
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
@@ -68,31 +81,39 @@ const StyledTableRow = styled(TableRow)(({ theme }) => ({
 
 function App() {
   const [list, setList] = useState([]);
+  const [user, setUser] = useState(null);
+
   const [listObj, setListObj] = useState({});
+  const [selectedTransit, setSelectedTransit] = useState(null);
 
   const onSubmit = (v) => {
-    setList([...list, v]);
-    //This is local
+    if (selectedTransit) {
+      updateTransit(selectedTransit, v?.title, v?.amount, v?.type);
+      setSelectedTransit(null);
+    } else {
+      createTransit(v?.title, v?.amount, v?.type);
+    }
+    // setList([...list, v]);
+    // This is local
     // let key = Math.random();
     // setListObj({
     //   ...listObj,
     //   [key]: v,
     // });
-    createTransaction(v?.title, v?.amount, v?.type);
   };
 
-  const onDelete = (currentIndex) => {
-    let filteredList = list.filter((el, index) => index !== currentIndex);
-    setList(filteredList);
-  };
+  // const onDelete = (currentIndex) => {
+  //   let filteredList = list.filter((el, index) => index !== currentIndex);
+  //   setList(filteredList);
+  // };
 
   const calculateCurrentBalance = () => {
     let total = 0;
-    list.map((el) => {
-      if (el?.type === "Income") {
-        total += el?.amount;
+    Object.keys(listObj).map((key) => {
+      if (listObj[key]?.type === "Income") {
+        total += listObj[key]?.amount;
       } else {
-        total -= el?.amount;
+        total -= listObj[key]?.amount;
       }
     });
     return total;
@@ -100,9 +121,9 @@ function App() {
 
   const clcTotalIncome = () => {
     let total = 0;
-    list?.map((el) => {
-      if (el?.type === "Income") {
-        total += el?.amount;
+    Object.keys(listObj).map((key) => {
+      if (listObj[key]?.type === "Income") {
+        total += listObj[key]?.amount;
       }
     });
     return total;
@@ -110,26 +131,41 @@ function App() {
 
   const clcTotalExpence = () => {
     let total = 0;
-    list?.map((el) => {
-      if (el?.type === "Expenses") {
-        total += el?.amount;
+    Object.keys(listObj).map((key) => {
+      if (listObj[key]?.type === "Expenses") {
+        total += listObj[key]?.amount;
       }
     });
     return total;
   };
 
-  // Firebase will read data from database
-  const listenerCallbackFn = data => {
-    console.log("transactions", data);
-    //listen and update-> database -> ui
-    setListObj(data)
+  // Firebase will listen data from database and set to database
+  const listenerCallbackFn = (data) => {
+    // console.log("transactions", data);
+    // listen and update-> database -> ui
+    setListObj(data);
   };
+
   useEffect(() => {
-    listenTransactions(listenerCallbackFn);
+    let user = userId();
+    // alert(JSON.stringify(user))
+    setUser(userId());
+    listenTransit(listenerCallbackFn);
   }, []);
 
+  // Auth part
+
+  const createdUser = (v) => {
+    createFirebaseUser(v?.email, v?.password);
+  };
+  const singIn = () => {
+    signInFirebaseUser();
+  };
   return (
     <Container sx={{ width: "100%" }}>
+      <Card>
+        <p>Current User: {user?.currentUser?.email}</p>
+      </Card>
       <Grid
         container
         spacing={3}
@@ -141,11 +177,11 @@ function App() {
         <Card sx={{ width: "26%", padding: "5px" }}>
           <h4>Total Income: {clcTotalIncome()} $</h4>
         </Card>
-        <Card sx={{ width: "26%", padding: "5px" }} a>
+        <Card sx={{ width: "26%", padding: "5px" }}>
           <h4>Total Expense: {clcTotalExpence()} $</h4>
         </Card>
       </Grid>
-      <Grid container spacing={2}>
+      <Grid container spacing={3}>
         <Grid item>
           <Card>
             <CardContent>
@@ -211,15 +247,76 @@ function App() {
                         onChange={handleChange}
                         helperText="Please select your currency"
                       >
-                        {transactionTypes.map((option) => (
-                          <MenuItem key={option.value} value={option.value}>
+                        {transactionTypes.map((option, index) => (
+                          <MenuItem key={index} value={option.value}>
                             {option.label}
                           </MenuItem>
                         ))}
                       </TextField>
                     </div>
                     <Button type="submit" variant="contained">
-                      Add
+                      {selectedTransit ? "Edit" : "Add"}
+                    </Button>
+                  </Box>
+                )}
+              </Formik>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent>
+              <Formik
+                initialValues={{ email: "", password: "" }}
+                onSubmit={createdUser}
+                validationSchema={AuthSchema}
+              >
+                {({
+                  values,
+                  errors,
+                  touched,
+                  handleChange,
+                  handleBlur,
+                  handleSubmit,
+                  isSubmitting,
+                  /* and other goodies */
+                }) => (
+                  <Box
+                    onSubmit={handleSubmit}
+                    component="form"
+                    sx={{
+                      "& .MuiTextField-root": { m: 1, width: "40ch" },
+                    }}
+                  >
+                    <h3> Auth Part</h3>
+                    <div style={{ marginBottom: "20px" }}>
+                      <TextField
+                        error={errors.email && touched.email}
+                        required
+                        id="outlined-required"
+                        label="Email"
+                        type="email"
+                        name="email"
+                        placeholder="Email"
+                        onChange={handleChange}
+                        onBlur={handleBlur}
+                        value={values.email}
+                      />
+                    </div>
+                    <div style={{ marginBottom: "20px" }}>
+                      <TextField
+                        error={errors.password && touched.password}
+                        required
+                        id="outlined-required"
+                        label="Password"
+                        type="password"
+                        name="password"
+                        placeholder="Password"
+                        onChange={handleChange}
+                        onBlur={handleBlur}
+                        value={values.password}
+                      />
+                    </div>
+                    <Button type="submit" variant="contained">
+                      Auth
                     </Button>
                   </Box>
                 )}
@@ -255,8 +352,11 @@ function App() {
                             {listObj[key].type}
                           </StyledTableCell>
                           <StyledTableCell align="center">
-                            <Button onClick={() => onDelete()}>
+                            <Button onClick={() => deleteTransit(key)}>
                               <MdDelete />
+                            </Button>
+                            <Button onClick={() => setSelectedTransit(key)}>
+                              <FiEdit2 />
                             </Button>
                           </StyledTableCell>
                         </StyledTableRow>
